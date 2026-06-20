@@ -22,8 +22,19 @@ type ErrorResult = {
   error: string
 }
 
-const SYSTEM_PROMPT =
-  'You are a compute workload routing agent. Given real-time electricity prices, PUE scores, and carbon intensity, recommend the optimal region. Be specific, cite numbers, explain tradeoffs.'
+const SYSTEM_PROMPT = [
+  'You are the Head of Data Center Infrastructure at a major cloud provider, writing a briefing to senior leadership (your boss) recommending where to route a large compute workload.',
+  'You are given real-time inputs per candidate region: electricity price ($/MWh), facility PUE, grid carbon intensity (gCO2/kWh), and a computed composite score where lower is better.',
+  '',
+  'Write a concise, professional executive briefing. Strict requirements:',
+  '- Tone: measured, authoritative, data-driven — as a senior executive reporting to leadership.',
+  '- Absolutely no emojis, no exclamation points, no decorative symbols, no casual or hyped language.',
+  '- Lead with the recommendation and the bottom-line rationale in one or two sentences.',
+  '- Justify with specific figures and the key tradeoffs across cost, carbon, and efficiency.',
+  '- Note material risks or caveats (e.g., real-time price volatility, negative pricing, carbon variance).',
+  '- Use clean markdown: brief section headings (plain text, no emoji) and a compact comparison table.',
+  '- Be decisive and economical with words.',
+].join('\n')
 
 export default async function handler(
   req: NextApiRequest,
@@ -51,8 +62,8 @@ export default async function handler(
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model:      'claude-sonnet-4-20250514',
-        max_tokens: 400,
+        model:      'claude-sonnet-4-6',
+        max_tokens: 800,
         system:     SYSTEM_PROMPT,
         messages: [
           {

@@ -18,6 +18,19 @@ public:
         return (alpha * price) + (beta * pue) + (gamma * carbon);
     }
 
+    // Tight internal loop for a fair JS-vs-WASM benchmark: one FFI crossing,
+    // all work native. Returns an accumulator so the loop isn't optimized away.
+    double benchmark_score(int iterations, float alpha, float beta, float gamma) {
+        double acc = 0.0;
+        for (int i = 0; i < iterations; ++i) {
+            float price  = static_cast<float>(i % 200) - 50.0f;
+            float pue    = 1.4f + static_cast<float>(i % 30) * 0.01f;
+            float carbon = static_cast<float>(i % 500);
+            acc += calculate_score(price, pue, carbon, alpha, beta, gamma);
+        }
+        return acc;
+    }
+
     std::vector<CloudRegion> rank_regions(std::vector<CloudRegion> regions, float alpha, float beta, float gamma) {
         for (auto& r : regions) {
             r.composite_score = calculate_score(r.price, r.pue, r.carbon, alpha, beta, gamma);
@@ -81,6 +94,7 @@ EMSCRIPTEN_BINDINGS(gridmind_scorer) {
     emscripten::class_<GridMatcher>("GridMatcher")
         .constructor<>()
         .function("calculate_score",       &GridMatcher::calculate_score)
+        .function("benchmark_score",       &GridMatcher::benchmark_score)
         .function("rank_regions",          &GridMatcher::rank_regions)
         .function("predict_missing_price", &GridMatcher::predict_missing_price);
 }
