@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { loadScorer } from '../lib/loadScorer'
+import AgentPanel from './AgentPanel'
 
 type CloudRegion = {
   name: string
@@ -293,6 +294,9 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
           {/* LEFT column */}
           <div className="space-y-5 xl:col-span-8">
+
+            {/* routing agent — the deploy action */}
+            <AgentPanel />
 
             {/* hero + controls */}
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
