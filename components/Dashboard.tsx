@@ -93,7 +93,7 @@ export default function Dashboard() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const callRoute = useCallback(async (r: CloudRegion[], w: Weights): Promise<RouteResponse> => {
-    const res = await fetch('/api/route', {
+    const res = await fetch('/api/score', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ regions: r, alpha: w.alpha, beta: w.beta, gamma: w.gamma, delta: w.delta }),

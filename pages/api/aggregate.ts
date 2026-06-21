@@ -14,6 +14,6 @@ export default async function handler(
   res: NextApiResponse<CloudRegion[]>
 ) {
   const regions = await getRegions()
-  // composite_score is filled in by /api/route once weights are known
+  // composite_score is filled in by /api/score once weights are known
   res.status(200).json(regions.map((r) => ({ ...r, composite_score: 0 })))
 }
