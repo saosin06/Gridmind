@@ -11,7 +11,7 @@ import { REGIONS } from '../../lib/gridmind/regions'
 // Opus tool loops are slow + this is non-streaming → give it headroom.
 export const config = { maxDuration: 60 }
 
-const MODEL = 'claude-opus-4-8'
+const MODEL = 'claude-sonnet-4-6'
 const EFFORT = 'low'        // snappy; the snapshot is pre-fetched so only round-trips cost
 const MAX_ITERS = 5
 
