@@ -53,6 +53,7 @@ const USER_LOCS = [
 ]
 
 const fmtPrice = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(n).toFixed(2)}`
+const fmtMoney = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(Math.round(n)).toLocaleString()}`
 const carbonTone = (c: number) =>
   c < 150 ? { dot: 'bg-emerald-400', text: 'text-emerald-300' }
   : c < 350 ? { dot: 'bg-amber-400', text: 'text-amber-300' }
@@ -169,6 +170,11 @@ export default function Dashboard() {
   const cheapest = regions.length ? regions.reduce((a, b) => (b.price < a.price ? b : a)) : undefined
   const cleanest = regions.length ? regions.reduce((a, b) => (b.carbon < a.carbon ? b : a)) : undefined
   const spread = regions.length ? Math.max(...regions.map((r) => r.price)) - Math.min(...regions.map((r) => r.price)) : undefined
+  // representative savings headline: best vs worst region for a 50 MW · 12h job
+  const worstRegion = ranked.length ? ranked[ranked.length - 1] : undefined
+  const repEcon = (r: CloudRegion) => { const mwh = 50 * 12 * r.pue; return { cost: mwh * r.price, co2: (mwh * r.carbon) / 1000 } }
+  const repSaveUsd = best && worstRegion ? repEcon(worstRegion).cost - repEcon(best).cost : 0
+  const repSaveCo2 = best && worstRegion ? repEcon(worstRegion).co2 - repEcon(best).co2 : 0
   const maxScore = Math.max(1, ...ranked.map((r) => Math.abs(r.composite_score)))
   const tempFor = (name: string) => { const w = weather.find((x) => x.region === name); return w ? `${w.temp_f}°F` : '—' }
 
@@ -217,6 +223,16 @@ export default function Dashboard() {
           <KpiCard label="Cleanest now" value={cleanest?.name ?? '—'} sub={cleanest ? `${cleanest.carbon} gCO₂ / kWh` : ''} />
           <KpiCard label="Arbitrage spread" value={spread != null ? `${fmtPrice(spread)}` : '—'} sub="$/MWh across regions" />
         </div>
+
+        {/* ── Savings headline ─────────────────────────────────────── */}
+        {best && worstRegion && repSaveUsd > 0 && (
+          <div className="mb-6 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.07] px-5 py-3 text-sm text-slate-300">
+            Routing a <span className="font-semibold text-slate-100">50 MW · 12 h</span> job to{' '}
+            <span className="font-semibold text-emerald-300">{best.name}</span> right now saves about{' '}
+            <span className="font-semibold text-emerald-300">{fmtMoney(repSaveUsd)}</span> and{' '}
+            <span className="font-semibold text-emerald-300">{repSaveCo2.toFixed(1)} t CO₂</span> versus {worstRegion.name}.
+          </div>
+        )}
 
         {/* ── Tabs ─────────────────────────────────────────────────── */}
         <div className="mb-6 flex gap-1 border-b border-slate-800">

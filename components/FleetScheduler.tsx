@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import CountUp from './CountUp'
 
 type Status = 'queued' | 'deferred' | 'running' | 'done'
 type Job = {
@@ -223,9 +224,9 @@ export default function FleetScheduler() {
 
         {/* Totals */}
         <div className="mt-5 grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-slate-800 bg-slate-800">
-          <Totl label="Cumulative savings" value={fmtMoney(totals.usd)} tone="text-emerald-300" />
-          <Totl label="CO₂ avoided" value={`${totals.co2.toFixed(1)} t`} tone="text-emerald-300" />
-          <Totl label="Jobs completed" value={`${totals.completed}`} sub={`${pending} pending`} tone="text-slate-100" />
+          <Totl label="Cumulative savings" value={totals.usd} render={fmtMoney} tone="text-emerald-300" />
+          <Totl label="CO₂ avoided" value={totals.co2} render={(n) => `${n.toFixed(1)} t`} tone="text-emerald-300" />
+          <Totl label="Jobs completed" value={totals.completed} render={(n) => `${Math.round(n)}`} sub={`${pending} pending`} tone="text-slate-100" />
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -314,11 +315,11 @@ export default function FleetScheduler() {
   )
 }
 
-function Totl({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone: string }) {
+function Totl({ label, value, render, sub, tone }: { label: string; value: number; render: (n: number) => string; sub?: string; tone: string }) {
   return (
     <div className="bg-slate-900 px-4 py-3">
       <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-0.5 text-2xl font-semibold tabular-nums ${tone}`}>{value}</p>
+      <p className={`mt-0.5 text-2xl font-semibold tabular-nums ${tone}`}><CountUp value={value} render={render} /></p>
       {sub && <p className="text-[10px] text-slate-600">{sub}</p>}
     </div>
   )

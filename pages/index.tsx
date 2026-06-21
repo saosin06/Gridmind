@@ -39,9 +39,17 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>GridMind — Compute Workload Router</title>
-        <meta name="description" content="Real-time multi-region compute routing by price, efficiency, and carbon intensity." />
+        <title>GridMind — Carbon & Cost-Aware Compute Routing</title>
+        <meta name="description" content="GridMind routes compute workloads to the cheapest, cleanest region and time using live grid data — and an AI agent that decides and takes real action, within hard guardrails." />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="GridMind — Carbon & Cost-Aware Compute Routing" />
+        <meta property="og:description" content="Live grid data → an AI agent that routes compute to the cheapest, cleanest region and time, within guardrails — and takes real action." />
+        <meta property="og:url" content="https://gridmind-six.vercel.app" />
+        <meta name="twitter:card" content="summary" />
+        <meta name="twitter:title" content="GridMind — Carbon & Cost-Aware Compute Routing" />
+        <meta name="twitter:description" content="An AI agent that routes compute to the cheapest, cleanest region and time — and takes real action." />
       </Head>
       <ErrorBoundary>
         <Dashboard />
