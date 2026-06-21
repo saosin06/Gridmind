@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import AgentPanel from './AgentPanel'
 import FleetScheduler from './FleetScheduler'
+import DevPanel from './DevPanel'
 
 type CloudRegion = {
   name: string
@@ -90,6 +91,7 @@ export default function Dashboard() {
   const [loading, setLoading]         = useState(true)
   const [updatedAt, setUpdatedAt]     = useState('')
   const [tab, setTab]                 = useState<Tab>('overview')
+  const [showDev, setShowDev]         = useState(false)
 
   const wRef = useRef(weights); useEffect(() => { wRef.current = weights }, [weights])
   const locRef = useRef(userLoc); useEffect(() => { locRef.current = userLoc }, [userLoc])
@@ -210,14 +212,22 @@ export default function Dashboard() {
               <p className="text-xs text-slate-400">Carbon &amp; cost-aware compute routing</p>
             </div>
           </div>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-300">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+          <div className="flex items-center gap-2.5">
+            <button onClick={() => setShowDev(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-500/40 hover:text-emerald-300">
+              <span className="font-mono text-emerald-400">{'</>'}</span> Developers
+            </button>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-300">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+              </span>
+              Live{updatedAt && <span className="text-slate-500">· {updatedAt}</span>}
             </span>
-            Live{updatedAt && <span className="text-slate-500">· {updatedAt}</span>}
-          </span>
+          </div>
         </header>
+
+        {showDev && <DevPanel onClose={() => setShowDev(false)} />}
 
         {/* ── KPI strip ────────────────────────────────────────────── */}
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
