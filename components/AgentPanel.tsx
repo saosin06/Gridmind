@@ -30,7 +30,7 @@ const PROFILES = [
 const REGION_NAMES = REGIONS.map((r) => r.name)
 const fmtMoney = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(Math.round(n)).toLocaleString()}`
 
-type Phase = 'idle' | 'running' | 'revealing' | 'done' | 'deploying' | 'deployed'
+type Phase = 'idle' | 'running' | 'revealing' | 'done'
 
 export default function AgentPanel() {
   const [mw, setMw] = useState(50)
@@ -45,15 +45,22 @@ export default function AgentPanel() {
   const [result, setResult] = useState<DecideResult | null>(null)
   const [error, setError] = useState('')
   const [revealed, setRevealed] = useState(0)
-  const [deployPct, setDeployPct] = useState(0)
-  const card = 'rounded-xl border border-slate-800 bg-slate-900/60 shadow-lg shadow-black/30'
+  const [prState, setPrState] = useState<'idle' | 'opening' | 'opened' | 'error'>('idle')
+  const [pr, setPr] = useState<{ url: string; number: number } | null>(null)
+  const [prError, setPrError] = useState('')
+  const [flyState, setFlyState] = useState<'idle' | 'opening' | 'opened' | 'error'>('idle')
+  const [fly, setFly] = useState<{ machine_id: string; region: string; dashboard: string } | null>(null)
+  const [flyError, setFlyError] = useState('')
+  const card = 'gm-card'
 
   function toggleRegion(name: string) {
     setAllowed((prev) => (prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]))
   }
 
   async function run() {
-    setPhase('running'); setResult(null); setError(''); setRevealed(0); setDeployPct(0)
+    setPhase('running'); setResult(null); setError(''); setRevealed(0)
+    setPrState('idle'); setPr(null); setPrError('')
+    setFlyState('idle'); setFly(null); setFlyError('')
     const policy: Record<string, unknown> = {}
     if (maxCarbon.trim() !== '') policy.max_carbon = Number(maxCarbon)
     if (allowed.length < REGION_NAMES.length) policy.allowed_regions = allowed
@@ -86,22 +93,49 @@ export default function AgentPanel() {
     return () => clearTimeout(t)
   }, [phase, revealed, result])
 
-  // simulated deploy progress
-  const deployTimer = useRef<ReturnType<typeof setInterval> | null>(null)
-  function simulateDeploy() {
-    setPhase('deploying'); setDeployPct(0)
-    deployTimer.current = setInterval(() => {
-      setDeployPct((p) => {
-        if (p >= 100) { if (deployTimer.current) clearInterval(deployTimer.current); setPhase('deployed'); return 100 }
-        return p + 4
-      })
-    }, 60)
-  }
-  useEffect(() => () => { if (deployTimer.current) clearInterval(deployTimer.current) }, [])
-
   const rec = result?.recommendation
   const proj = result?.projected
   const running = phase === 'running' || phase === 'revealing'
+
+  // Real action (human-approval-gated): open a GitHub PR with the deployment manifest
+  async function openPr() {
+    if (!rec || !proj) return
+    setPrState('opening'); setPrError('')
+    try {
+      const res = await fetch('/api/deploy-pr', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          workload: { name: `${profile}-${mw}mw-${hours}h`, mw, hours, profile },
+          region: rec.region, run_now: rec.run_now, defer_until: rec.defer_until,
+          projected: proj, rationale: result?.rationale ?? '',
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) { setPrError(data.error || 'Failed to open PR'); setPrState('error'); return }
+      setPr({ url: data.url, number: data.number }); setPrState('opened')
+    } catch (err) {
+      console.error('[AgentPanel] openPr', err); setPrError('Request failed'); setPrState('error')
+    }
+  }
+
+  // Real action: boot an actual Fly.io machine in the chosen region
+  async function openFly() {
+    if (!rec) return
+    setFlyState('opening'); setFlyError('')
+    try {
+      const res = await fetch('/api/deploy-fly', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ region: rec.region, workload: { name: `${profile}-${mw}mw-${hours}h` } }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) { setFlyError(data.error || 'Fly deploy failed'); setFlyState('error'); return }
+      setFly({ machine_id: data.machine_id, region: data.region, dashboard: data.dashboard }); setFlyState('opened')
+    } catch (err) {
+      console.error('[AgentPanel] openFly', err); setFlyError('Request failed'); setFlyState('error')
+    }
+  }
 
   return (
     <section className={`${card} p-6`}>
@@ -112,7 +146,7 @@ export default function AgentPanel() {
           <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">Claude · live data</span>
         </div>
         {phase !== 'idle' && (
-          <button onClick={() => { setPhase('idle'); setResult(null) }} className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-800 hover:text-slate-200">New</button>
+          <button onClick={() => { setPhase('idle'); setResult(null); setPrState('idle'); setPr(null); setFlyState('idle'); setFly(null) }} className="rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-800 hover:text-slate-200">New</button>
         )}
       </div>
 
@@ -174,7 +208,7 @@ export default function AgentPanel() {
           </div>
 
           {/* ── Decision ── */}
-          {(phase === 'done' || phase === 'deploying' || phase === 'deployed') && result && (
+          {phase === 'done' && result && (
             result.ok && rec && proj ? (
               <div className="gm-fade-up mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/[0.06] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -196,21 +230,34 @@ export default function AgentPanel() {
                   ))}
                 </div>
 
-                {phase === 'done' && (
-                  <button onClick={simulateDeploy} className="mt-4 w-full rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20">
-                    🚀 Simulate deploy
-                  </button>
-                )}
-                {(phase === 'deploying' || phase === 'deployed') && (
-                  <div className="mt-4">
-                    <div className="mb-1 flex justify-between text-xs text-slate-400">
-                      <span>{phase === 'deployed' ? '✓ Deployed' : `Provisioning ${mw} MW → ${rec.region}…`}</span>
-                      <span className="text-slate-600">simulated</span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-800">
-                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all" style={{ width: `${deployPct}%` }} />
-                    </div>
-                  </div>
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {/* GitOps PR */}
+                  {prState === 'opened' && pr ? (
+                    <a href={pr.url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center justify-between rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-300 transition hover:bg-emerald-500/20">
+                      <span>✓ PR #{pr.number}</span><span className="text-xs text-emerald-400/70">GitHub →</span>
+                    </a>
+                  ) : (
+                    <button onClick={openPr} disabled={prState === 'opening'}
+                      className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50">
+                      {prState === 'opening' ? 'Opening PR…' : '🚀 Open deployment PR'}
+                    </button>
+                  )}
+                  {/* Fly real deploy */}
+                  {flyState === 'opened' && fly ? (
+                    <a href={fly.dashboard} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center justify-between rounded-lg border border-teal-500/40 bg-teal-500/10 px-4 py-2 text-sm text-teal-200 transition hover:bg-teal-500/20">
+                      <span>✓ Live in {fly.region}</span><span className="text-xs text-teal-300/70">Fly →</span>
+                    </a>
+                  ) : (
+                    <button onClick={openFly} disabled={flyState === 'opening'}
+                      className="rounded-lg border border-teal-500/40 bg-teal-500/10 px-4 py-2 text-sm font-medium text-teal-200 transition hover:bg-teal-500/20 disabled:opacity-50">
+                      {flyState === 'opening' ? 'Deploying…' : '⚡ Deploy to Fly (real)'}
+                    </button>
+                  )}
+                </div>
+                {(prState === 'error' || flyState === 'error') && (
+                  <p className="mt-2 text-xs text-rose-400">{prError || flyError}</p>
                 )}
               </div>
             ) : (

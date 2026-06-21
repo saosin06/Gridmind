@@ -13,11 +13,47 @@
 
 html,
 body {
-  background: var(--background);
   color: var(--foreground);
   font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Aurora: soft emerald/teal/violet glows + a faint dot grid over near-black */
+  background-color: #05080e;
+  background-image:
+    radial-gradient(55rem 55rem at 12% -8%, rgba(16, 185, 129, 0.10), transparent 60%),
+    radial-gradient(50rem 50rem at 102% 2%, rgba(45, 212, 191, 0.08), transparent 55%),
+    radial-gradient(45rem 45rem at 88% 108%, rgba(99, 102, 241, 0.06), transparent 60%),
+    radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.05) 1px, transparent 0);
+  background-size: auto, auto, auto, 28px 28px;
+  background-repeat: no-repeat, no-repeat, no-repeat, repeat;
+  background-attachment: fixed;
+}
+
+/* ── Aurora-glass card + accents ─────────────────────────────────────── */
+.gm-card {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.10);
+  background: rgba(13, 19, 31, 0.55);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 12px 34px -16px rgba(0, 0, 0, 0.7);
+}
+.gm-gradient-text {
+  background: linear-gradient(92deg, #6ee7b7, #34d399 45%, #2dd4bf);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@keyframes gm-tab {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.gm-tab { animation: gm-tab 0.35s ease both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .gm-tab, .gm-fade-up { animation: none; }
 }
 
 /* ── Range slider (cross-browser, emerald accent) ───────────────────── */
