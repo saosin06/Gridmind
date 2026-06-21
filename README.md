@@ -77,6 +77,21 @@ flowchart LR
 - Real actions via the **GitHub** and **Fly.io Machines** REST APIs
 - Deployed on **Vercel** (auto-deploys on push; data endpoints edge-cached with stale-while-revalidate)
 
+## Integrations — how systems plug in
+
+GridMind is **API-first**: a dashboard is for evaluating and observing, but real adoption is GridMind embedded in your pipeline.
+
+- **REST API** — `POST /api/decide` (agentic decision) and `POST /api/schedule` (fast deterministic batch routing) return `{region, run_now, defer_hours, projected, savings}`. Call them from your orchestration code:
+  ```bash
+  curl -s -X POST https://gridmind-six.vercel.app/api/schedule \
+    -H 'content-type: application/json' \
+    -d '{"jobs":[{"id":"job1","mw":50,"hours":12,"flexible":true,"profile":"training"}]}'
+  ```
+- **MCP server** (`mcp/`) — exposes GridMind as tools (`get_grid_conditions`, `route_workload`, `deploy_to_region`, `open_deployment_pr`) so any agent — Claude Code, Claude Desktop, your own — can **observe → route → act**. See [`mcp/README.md`](mcp/README.md).
+- **GitOps** — the agent opens a real pull request with a Kubernetes manifest pinned to the chosen region; merge to deploy. Drops into existing CI/CD.
+
+> Roadmap: Kubernetes scheduler plugin, Slurm/Airflow/Ray operators, Terraform provider, and a CLI — so workloads are placed with no human in the loop.
+
 ## Run locally
 
 ```bash

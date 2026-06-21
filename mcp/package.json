@@ -1,0 +1,13 @@
+{
+  "name": "gridmind-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server exposing GridMind carbon/cost-aware compute routing as tools",
+  "bin": { "gridmind-mcp": "./server.mjs" },
+  "scripts": { "start": "node server.mjs", "test": "node test.mjs" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.13.0",
+    "zod": "^3.23.8"
+  }
+}
