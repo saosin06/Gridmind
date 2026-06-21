@@ -1,6 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { getRegions } from '../../lib/gridmind/data'
 
+// getRegions() runs 3 sequential GridStatus calls (1 req/sec rate limit) +
+// Electricity Maps — needs headroom beyond Vercel's 10s default or pricing
+// times out and falls back to constants. (Edge-cached, so this only runs on
+// background revalidation, not on the user's request.)
+export const config = { maxDuration: 30 }
+
 type CloudRegion = {
   name: string
   price: number
