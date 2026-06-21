@@ -245,10 +245,13 @@ export default function AgentPanel() {
                   )}
                   {/* Fly real deploy */}
                   {flyState === 'opened' && fly ? (
-                    <a href={fly.dashboard} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center justify-between rounded-lg border border-teal-500/40 bg-teal-500/10 px-4 py-2 text-sm text-teal-200 transition hover:bg-teal-500/20">
-                      <span>✓ Live in {fly.region}</span><span className="text-xs text-teal-300/70">Fly →</span>
-                    </a>
+                    <div className="rounded-lg border border-teal-500/40 bg-teal-500/10 px-4 py-2 text-teal-200">
+                      <div className="flex items-center justify-between text-sm">
+                        <span>✓ Machine live in <span className="font-semibold">{fly.region}</span></span>
+                        <a href={fly.dashboard} target="_blank" rel="noopener noreferrer" className="text-[11px] text-teal-300/70 underline underline-offset-2">your Fly console ↗</a>
+                      </div>
+                      <div className="mt-0.5 font-mono text-[11px] text-teal-300/70">id {fly.machine_id} · real Fly.io machine</div>
+                    </div>
                   ) : (
                     <button onClick={openFly} disabled={flyState === 'opening'}
                       className="rounded-lg border border-teal-500/40 bg-teal-500/10 px-4 py-2 text-sm font-medium text-teal-200 transition hover:bg-teal-500/20 disabled:opacity-50">

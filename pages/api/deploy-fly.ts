@@ -72,7 +72,7 @@ export default async function handler(
           restart: { policy: 'no' },
           auto_destroy: true,
           env: { GRIDMIND_WORKLOAD: workload?.name ?? 'workload', GRIDMIND_REGION: region },
-          init: { exec: ['/bin/sh', '-c', `echo "GridMind running ${workload?.name ?? 'workload'} in $FLY_REGION"; sleep 120`] },
+          init: { exec: ['/bin/sh', '-c', `echo "GridMind running ${workload?.name ?? 'workload'} in $FLY_REGION"; sleep 600`] },
         },
       }),
     })
