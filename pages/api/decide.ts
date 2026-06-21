@@ -8,12 +8,12 @@ import {
 import { estimateCost } from '../../lib/gridmind/economics'
 import { REGIONS } from '../../lib/gridmind/regions'
 
-// Opus tool loops are slow + this is non-streaming → give it headroom.
-export const config = { maxDuration: 60 }
+// Single-call agent: all data is pre-loaded into the prompt so the model decides
+// in ONE forced tool call (no read-tool round-trips, no adaptive thinking) → fast.
+export const config = { maxDuration: 30 }
 
 const MODEL = 'claude-sonnet-4-6'
-const EFFORT = 'low'        // snappy; the snapshot is pre-fetched so only round-trips cost
-const MAX_ITERS = 5
+const EFFORT = 'low'
 
 type Policy = {
   allowed_regions?: string[]
@@ -117,100 +117,80 @@ export default async function handler(
 
   const candidateNames = candidates.map((c) => c.region)
 
-  // ── tool data sourced from the frozen snapshot ───────────────────────
-  const liveConditions = () =>
-    candidates.map((c) => ({ region: c.region, price_mwh: c.price, pue: REGIONS.find((r) => r.name === c.region)!.pue, carbon: c.carbon, latency_ms: c.latency, score: c.score }))
-  const carbonForecast = () =>
-    candidateNames.map((name) => {
-      const fc = fcFor(name)
-      const pts = (fc?.forecast ?? []).map((p, i) => ({ hours_ahead: i + 1, carbon: p.carbon }))
-      const cleanest = pts.length ? pts.reduce((a, b) => (b.carbon < a.carbon ? b : a)) : null
-      const cur = candidates.find((c) => c.region === name)!.carbon
-      return { region: name, current_carbon: cur, cleanest, points: pts }
-    })
-  const costFor = (region: string) => {
-    const r = scored.find((s) => s.name === region)!
-    const e = estimateCost(r, mw, hours)
-    return { region, energy_cost_usd: round(e.cost), co2_tonnes: round(e.co2_tonnes, 2) }
+  // Pre-compute everything the agent needs so it can decide in ONE call.
+  const conditions = candidates.map((c) => {
+    const meta = REGIONS.find((r) => r.name === c.region)!
+    const pts = fcFor(c.region)?.forecast ?? []
+    let cleanest: { in_hours: number; carbon: number } | null = null
+    if (pts.length) {
+      let bi = 0
+      for (let i = 1; i < pts.length; i++) if (pts[i].carbon < pts[bi].carbon) bi = i
+      cleanest = { in_hours: bi + 1, carbon: pts[bi].carbon }
+    }
+    const e = estimateCost(scored.find((s) => s.name === c.region)!, mw, hours)
+    return {
+      region: c.region, price_usd_mwh: c.price, pue: meta.pue, carbon_gco2_kwh: c.carbon,
+      latency_ms: c.latency, composite_score: c.score,
+      projected_cost_usd: round(e.cost), projected_co2_tonnes: round(e.co2_tonnes, 2),
+      cleanest_upcoming: cleanest,
+    }
+  })
+
+  // the server did the gather work — reflect it in the trace for the UI
+  trace.push({ tool: 'get_live_conditions', label: `Analyzed live conditions — ${candidates.length} candidate region(s)` })
+  trace.push({ tool: 'get_carbon_forecast', label: 'Reviewed 24h carbon forecast' })
+  trace.push({ tool: 'estimate_cost', label: `Computed projected cost (${mw} MW × ${hours} h)` })
+
+  const submitTool: Anthropic.Tool = {
+    name: 'submit_decision',
+    description: 'Submit the final routing decision for the workload.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        region: { type: 'string', enum: candidateNames, description: 'Region to route to (one of the candidates)' },
+        run_now: { type: 'boolean', description: 'true to run now, false to defer' },
+        defer_hours: { type: 'integer', description: 'Hours to defer (0 if running now)' },
+        rationale: { type: 'string', description: 'Concise executive justification citing the numbers' },
+      },
+      required: ['region', 'run_now', 'defer_hours', 'rationale'],
+      additionalProperties: false,
+    },
   }
 
-  // ── tool definitions ─────────────────────────────────────────────────
-  const tools: Anthropic.Tool[] = [
-    { name: 'get_live_conditions', description: 'Current price, PUE, carbon, latency, and composite score for each candidate region. Call this first.', input_schema: { type: 'object', properties: {}, additionalProperties: false } },
-    { name: 'get_carbon_forecast', description: 'Next-24h carbon-intensity forecast per candidate region, with the cleanest upcoming hour. Use to decide whether to run now or defer a flexible workload.', input_schema: { type: 'object', properties: {}, additionalProperties: false } },
-    { name: 'estimate_cost', description: 'Energy cost ($) and emissions (tonnes CO2) of running this workload in a region.', input_schema: { type: 'object', properties: { region: { type: 'string', enum: candidateNames } }, required: ['region'], additionalProperties: false } },
-    {
-      name: 'submit_decision',
-      description: 'Submit the final routing decision. Call this exactly once, alone, after gathering data.',
-      strict: true,
-      input_schema: {
-        type: 'object',
-        properties: {
-          region: { type: 'string', enum: candidateNames, description: 'Region to route the workload to' },
-          run_now: { type: 'boolean', description: 'true to run immediately, false to defer' },
-          defer_hours: { type: 'integer', description: 'Hours to defer (0 if running now)' },
-          rationale: { type: 'string', description: 'Concise executive justification citing the numbers' },
-        },
-        required: ['region', 'run_now', 'defer_hours', 'rationale'],
-        additionalProperties: false,
-      },
-    },
-  ]
-
   const system = [
-    'You are the routing agent for a compute-workload placement system, briefing on where and when to run a large job.',
-    'Gather the facts with the read tools first (live conditions, then carbon forecast and cost estimates as needed), then call submit_decision exactly once as your final step.',
-    'Weigh the workload priorities across cost, efficiency (PUE), carbon, and latency. For flexible workloads, consider deferring to a cleaner upcoming hour if the carbon drop is meaningful; for inflexible ones, run now.',
-    'The candidate regions have already been filtered to satisfy all hard policy constraints — every candidate is valid; choose among them.',
-    'In the rationale: measured, professional, specific with numbers. No emojis, no exclamation points.',
+    'You are the routing agent for a compute-workload placement system. You are given the live conditions, 24h carbon forecast summary, and projected cost for every candidate region — all the data you need is in the message.',
+    'Choose the best region and timing, weighing the workload priorities across cost, efficiency (PUE), carbon, and latency. Lower composite_score = better.',
+    'For FLEXIBLE workloads, defer to the cleanest upcoming hour only if the carbon drop is meaningful; for INFLEXIBLE ones, run now (defer_hours 0).',
+    'Every candidate already satisfies all hard policy constraints — choose among them.',
+    'Call submit_decision with your choice. Rationale: measured, professional, specific with the numbers. No emojis, no exclamation points.',
   ].join('\n')
 
-  const userMsg =
-    `Workload: ${body.workload.name ?? 'unnamed'} — ${mw} MW for ${hours} h, ${flexible ? 'FLEXIBLE (may defer)' : 'INFLEXIBLE (run now)'}.` +
-    `\nPriorities (weights): cost ${weights.alpha}, efficiency ${weights.beta}, carbon ${weights.gamma}, latency ${weights.delta}.` +
-    `\nUsers located in: ${userLoc}.` +
-    `\nCandidate regions: ${candidateNames.join(', ')}.`
+  const userMsg = [
+    `Workload: ${body.workload.name ?? 'unnamed'} — ${mw} MW for ${hours} h, ${flexible ? 'FLEXIBLE (may defer up to 24h)' : 'INFLEXIBLE (run now)'}.`,
+    `Priorities (weights 0-1): cost ${weights.alpha}, efficiency ${weights.beta}, carbon ${weights.gamma}, latency ${weights.delta}.`,
+    `Users located in: ${userLoc}.`,
+    `Candidates: ${JSON.stringify(conditions)}`,
+  ].join('\n')
 
-  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userMsg }]
   const client = new Anthropic()
-
   let decision: Decision | null = null
-  let iterations = 0
+  const iterations = 1
 
+  // ONE forced call — model decides directly from the pre-loaded data
   try {
-    for (let i = 0; i < MAX_ITERS && !decision; i++) {
-      iterations++
-      const resp = await client.messages.create({
-        model: MODEL,
-        max_tokens: 4096,
-        thinking: { type: 'adaptive' },
-        output_config: { effort: EFFORT },
-        system,
-        tools,
-        messages,
-      })
-
-      if (resp.stop_reason !== 'tool_use') break
-      messages.push({ role: 'assistant', content: resp.content })
-
-      const toolUses = resp.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
-      const submit = toolUses.find((t) => t.name === 'submit_decision')
-      if (submit) {
-        decision = submit.input as Decision
-        break
-      }
-
-      const results: Anthropic.ToolResultBlockParam[] = []
-      for (const t of toolUses) {
-        let out: unknown
-        if (t.name === 'get_live_conditions') { out = liveConditions(); trace.push({ tool: t.name, label: `Checked live grid conditions — ${candidates.length} regions` }) }
-        else if (t.name === 'get_carbon_forecast') { out = carbonForecast(); trace.push({ tool: t.name, label: 'Pulled 24h carbon forecast' }) }
-        else if (t.name === 'estimate_cost') { const region = (t.input as { region: string }).region; out = costFor(region); trace.push({ tool: t.name, label: `Estimated cost for ${region} (${mw}MW × ${hours}h)` }) }
-        else out = { error: `unknown tool ${t.name}` }
-        results.push({ type: 'tool_result', tool_use_id: t.id, content: JSON.stringify(out) })
-      }
-      messages.push({ role: 'user', content: results })
-    }
+    const resp = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1024,
+      output_config: { effort: EFFORT },
+      system,
+      tools: [submitTool],
+      tool_choice: { type: 'tool', name: 'submit_decision' },
+      messages: [{ role: 'user', content: userMsg }],
+    })
+    const submit = resp.content.find(
+      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use' && b.name === 'submit_decision'
+    )
+    if (submit) decision = submit.input as Decision
   } catch (err) {
     console.error('[/api/decide] model error', err)
   }
