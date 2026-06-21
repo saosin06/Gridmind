@@ -9,7 +9,7 @@ export type CarbonRow = { zone: string; carbon_intensity: number }
 export type PriceRow = { region: string; price_mwh: number }
 export type ForecastPoint = { datetime: string; carbon: number }
 export type RegionForecast = { region: string; zone: string; forecast: ForecastPoint[] }
-export type RegionData = { name: string; price: number; pue: number; carbon: number }
+export type RegionData = { name: string; price: number; pue: number; base_pue: number; temp_f: number; carbon: number }
 
 // ── Weather (OpenWeatherMap) ──────────────────────────────────────────
 async function fetchWeatherAt(lat: number, lon: number): Promise<{ temp_c: number; humidity: number }> {
@@ -195,16 +195,35 @@ export async function getForecast(): Promise<RegionForecast[]> {
   return data
 }
 
-// ── Aggregate: live price + carbon joined per region (PUE is static) ───
+// ── Dynamic cooling: ambient temperature → effective PUE ──────────────
+// Cooling efficiency is thermodynamically tied to ambient temperature. Below the
+// free-cooling threshold a facility runs at its base PUE; above it, cooling load
+// (and thus PUE) climbs roughly linearly with temperature.
+const FREE_COOLING_C = 15
+const COOLING_FACTOR = 0.012 // PUE added per °C above the threshold
+export function effectivePue(basePue: number, tempC: number): number {
+  return Math.round((basePue + COOLING_FACTOR * Math.max(0, tempC - FREE_COOLING_C)) * 100) / 100
+}
+
+// ── Aggregate: live price + carbon + temperature-adjusted PUE per region ──
 export async function getRegions(): Promise<RegionData[]> {
-  const [carbonSettled, pricingSettled] = await Promise.allSettled([getCarbon(), getPricing()])
+  const [carbonSettled, pricingSettled, weatherSettled] = await Promise.allSettled([
+    getCarbon(), getPricing(), getWeather(),
+  ])
   const carbon: CarbonRow[] = carbonSettled.status === 'fulfilled' ? carbonSettled.value : []
   const pricing: PriceRow[] = pricingSettled.status === 'fulfilled' ? pricingSettled.value : []
+  const weather: WeatherRow[] = weatherSettled.status === 'fulfilled' ? weatherSettled.value : []
 
-  return REGIONS.map((r) => ({
-    name: r.name,
-    price: pricing.find((p) => p.region === r.pricingKey)?.price_mwh ?? r.pricingFallback,
-    pue: r.pue,
-    carbon: carbon.find((c) => c.zone === r.carbonZone)?.carbon_intensity ?? r.carbonFallback,
-  }))
+  return REGIONS.map((r) => {
+    const tempF = weather.find((w) => w.region === r.name)?.temp_f
+    const pue = tempF != null ? effectivePue(r.pue, ((tempF - 32) * 5) / 9) : r.pue
+    return {
+      name: r.name,
+      price: pricing.find((p) => p.region === r.pricingKey)?.price_mwh ?? r.pricingFallback,
+      pue,
+      base_pue: r.pue,
+      temp_f: tempF ?? 0,
+      carbon: carbon.find((c) => c.zone === r.carbonZone)?.carbon_intensity ?? r.carbonFallback,
+    }
+  })
 }

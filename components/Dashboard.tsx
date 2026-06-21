@@ -309,7 +309,7 @@ export default function Dashboard() {
               <section className={`${card} overflow-hidden`}>
                 <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
                   <h3 className="text-sm font-semibold text-slate-200">Region matrix</h3>
-                  <span className="text-xs text-slate-500">ranked by composite score · lower is better</span>
+                  <span className="text-xs text-slate-500">ranked by composite score · PUE adjusts to live temperature</span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">

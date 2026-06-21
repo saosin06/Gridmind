@@ -2,11 +2,10 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import Anthropic from '@anthropic-ai/sdk'
 import { getRegions, getForecast, type RegionForecast } from '../../lib/gridmind/data'
 import {
-  withLatency, rankRegions, scoreRegion, latencyFor,
+  withLatency, rankRegions,
   PRESETS, DEFAULT_WEIGHTS, type Weights,
 } from '../../lib/gridmind/scoring'
 import { estimateCost } from '../../lib/gridmind/economics'
-import { REGIONS } from '../../lib/gridmind/regions'
 
 // Single-call agent: all data is pre-loaded into the prompt so the model decides
 // in ONE forced tool call (no read-tool round-trips, no adaptive thinking) → fast.
@@ -119,7 +118,7 @@ export default async function handler(
 
   // Pre-compute everything the agent needs so it can decide in ONE call.
   const conditions = candidates.map((c) => {
-    const meta = REGIONS.find((r) => r.name === c.region)!
+    const sr = scored.find((s) => s.name === c.region)!
     const pts = fcFor(c.region)?.forecast ?? []
     let cleanest: { in_hours: number; carbon: number } | null = null
     if (pts.length) {
@@ -127,9 +126,10 @@ export default async function handler(
       for (let i = 1; i < pts.length; i++) if (pts[i].carbon < pts[bi].carbon) bi = i
       cleanest = { in_hours: bi + 1, carbon: pts[bi].carbon }
     }
-    const e = estimateCost(scored.find((s) => s.name === c.region)!, mw, hours)
+    const e = estimateCost(sr, mw, hours)
     return {
-      region: c.region, price_usd_mwh: c.price, pue: meta.pue, carbon_gco2_kwh: c.carbon,
+      region: c.region, price_usd_mwh: c.price, carbon_gco2_kwh: c.carbon,
+      ambient_temp_f: sr.temp_f, base_pue: sr.base_pue, pue: sr.pue, // pue is temperature-adjusted
       latency_ms: c.latency, composite_score: c.score,
       projected_cost_usd: round(e.cost), projected_co2_tonnes: round(e.co2_tonnes, 2),
       cleanest_upcoming: cleanest,
@@ -160,6 +160,7 @@ export default async function handler(
   const system = [
     'You are the routing agent for a compute-workload placement system. You are given the live conditions, 24h carbon forecast summary, and projected cost for every candidate region — all the data you need is in the message.',
     'Choose the best region and timing, weighing the workload priorities across cost, efficiency (PUE), carbon, and latency. Lower composite_score = better.',
+    'PUE is dynamically adjusted for live ambient temperature — hotter regions incur higher cooling overhead (base_pue is the nameplate value; pue is the temperature-adjusted value used in scoring). Factor this into the decision.',
     'For FLEXIBLE workloads, defer to the cleanest upcoming hour only if the carbon drop is meaningful; for INFLEXIBLE ones, run now (defer_hours 0).',
     'Every candidate already satisfies all hard policy constraints — choose among them.',
     'Call submit_decision with your choice. Rationale: measured, professional, specific with the numbers. No emojis, no exclamation points.',
