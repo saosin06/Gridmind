@@ -13,6 +13,9 @@ type CloudRegion = {
   carbon: number
   latency: number
   composite_score: number
+  renewable_pct?: number
+  fossil_free_pct?: number
+  top_source?: string
 }
 type RouteResponse = {
   recommendation: string
@@ -335,6 +338,7 @@ export default function Dashboard() {
                         <th className="px-6 py-3 font-medium">Temp</th>
                         <th className="px-6 py-3 text-right font-medium">Price $/MWh</th>
                         <th className="px-6 py-3 font-medium">Carbon gCO₂/kWh</th>
+                        <th className="px-6 py-3 font-medium">Renewable</th>
                         <th className="px-6 py-3 text-right font-medium">PUE</th>
                         <th className="px-6 py-3 text-right font-medium">Latency</th>
                         <th className="px-6 py-3 font-medium">Score</th>
@@ -344,7 +348,7 @@ export default function Dashboard() {
                       {loading
                         ? Array.from({ length: 3 }).map((_, i) => (
                             <tr key={i} className="border-t border-slate-800/70">
-                              {Array.from({ length: 7 }).map((__, j) => (
+                              {Array.from({ length: 8 }).map((__, j) => (
                                 <td key={j} className="px-6 py-4"><div className="h-4 w-16 animate-pulse rounded bg-slate-800" /></td>
                               ))}
                             </tr>
@@ -367,6 +371,15 @@ export default function Dashboard() {
                                   <span className={`inline-flex items-center gap-2 tabular-nums ${tone.text}`}>
                                     <span className={`h-2 w-2 rounded-full ${tone.dot}`} />{r.carbon}
                                   </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="flex items-center gap-2">
+                                    <div className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-800">
+                                      <div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, r.renewable_pct ?? 0)}%` }} />
+                                    </div>
+                                    <span className="tabular-nums text-slate-300">{r.renewable_pct ?? '—'}%</span>
+                                  </div>
+                                  {r.top_source && <div className="mt-0.5 text-[10px] text-slate-600">mostly {r.top_source}</div>}
                                 </td>
                                 <td className="px-6 py-4 text-right tabular-nums text-slate-200">{r.pue.toFixed(2)}</td>
                                 <td className="px-6 py-4 text-right tabular-nums text-slate-300">{r.latency} ms</td>

@@ -9,7 +9,11 @@ export type CarbonRow = { zone: string; carbon_intensity: number }
 export type PriceRow = { region: string; price_mwh: number }
 export type ForecastPoint = { datetime: string; carbon: number }
 export type RegionForecast = { region: string; zone: string; forecast: ForecastPoint[] }
-export type RegionData = { name: string; price: number; pue: number; base_pue: number; temp_f: number; carbon: number }
+export type PowerRow = { zone: string; renewable_pct: number; fossil_free_pct: number; top_source: string }
+export type RegionData = {
+  name: string; price: number; pue: number; base_pue: number; temp_f: number; carbon: number
+  renewable_pct: number; fossil_free_pct: number; top_source: string
+}
 
 // ── Weather (OpenWeatherMap) ──────────────────────────────────────────
 async function fetchWeatherAt(lat: number, lon: number): Promise<{ temp_c: number; humidity: number }> {
@@ -86,6 +90,58 @@ export async function getCarbon(): Promise<CarbonRow[]> {
       }
     })
   )
+}
+
+// ── Power mix / generation breakdown (Electricity Maps) ───────────────
+const POWER_CACHE_TTL = 10 * 60 * 1000
+let powerCache: { ts: number; data: PowerRow[] } | null = null
+
+async function fetchZonePower(zone: string): Promise<Omit<PowerRow, 'zone'>> {
+  const url = new URL('https://api-access.electricitymaps.com/free-tier/power-breakdown/latest')
+  url.searchParams.set('zone', zone)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 3500)
+  try {
+    const res = await fetch(url.toString(), {
+      signal: controller.signal,
+      headers: { 'auth-token': process.env.ELECTRICITY_MAPS_AUTH_TOKEN ?? '' },
+    })
+    if (!res.ok) throw new Error(`Electricity Maps power ${res.status}`)
+    const data = await res.json()
+    const renewable = data?.renewablePercentage
+    if (typeof renewable !== 'number') throw new Error('Missing renewablePercentage')
+    const breakdown: Record<string, unknown> = data?.powerConsumptionBreakdown ?? {}
+    let top = 'unknown', topV = -1
+    for (const [k, v] of Object.entries(breakdown)) {
+      if (typeof v === 'number' && v > topV) { topV = v; top = k }
+    }
+    return {
+      renewable_pct: Math.round(renewable),
+      fossil_free_pct: Math.round(typeof data?.fossilFreePercentage === 'number' ? data.fossilFreePercentage : renewable),
+      top_source: top,
+    }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export async function getPower(): Promise<PowerRow[]> {
+  if (powerCache && Date.now() - powerCache.ts < POWER_CACHE_TTL) return powerCache.data
+  let anyLive = false
+  const data = await Promise.all(
+    REGIONS.map(async (r) => {
+      try {
+        const p = await fetchZonePower(r.carbonZone)
+        anyLive = true
+        return { zone: r.carbonZone, ...p }
+      } catch (err) {
+        console.error(`[data.getPower] zone=${r.carbonZone}`, err)
+        return { zone: r.carbonZone, renewable_pct: r.renewableFallback, fossil_free_pct: r.fossilFreeFallback, top_source: r.topSourceFallback }
+      }
+    })
+  )
+  if (anyLive) powerCache = { ts: Date.now(), data }
+  return data
 }
 
 // ── Pricing (GridStatus real-time LMP/SPP) ────────────────────────────
@@ -207,16 +263,18 @@ export function effectivePue(basePue: number, tempC: number): number {
 
 // ── Aggregate: live price + carbon + temperature-adjusted PUE per region ──
 export async function getRegions(): Promise<RegionData[]> {
-  const [carbonSettled, pricingSettled, weatherSettled] = await Promise.allSettled([
-    getCarbon(), getPricing(), getWeather(),
+  const [carbonSettled, pricingSettled, weatherSettled, powerSettled] = await Promise.allSettled([
+    getCarbon(), getPricing(), getWeather(), getPower(),
   ])
   const carbon: CarbonRow[] = carbonSettled.status === 'fulfilled' ? carbonSettled.value : []
   const pricing: PriceRow[] = pricingSettled.status === 'fulfilled' ? pricingSettled.value : []
   const weather: WeatherRow[] = weatherSettled.status === 'fulfilled' ? weatherSettled.value : []
+  const power: PowerRow[] = powerSettled.status === 'fulfilled' ? powerSettled.value : []
 
   return REGIONS.map((r) => {
     const tempF = weather.find((w) => w.region === r.name)?.temp_f
     const pue = tempF != null ? effectivePue(r.pue, ((tempF - 32) * 5) / 9) : r.pue
+    const pw = power.find((p) => p.zone === r.carbonZone)
     return {
       name: r.name,
       price: pricing.find((p) => p.region === r.pricingKey)?.price_mwh ?? r.pricingFallback,
@@ -224,6 +282,9 @@ export async function getRegions(): Promise<RegionData[]> {
       base_pue: r.pue,
       temp_f: tempF ?? 0,
       carbon: carbon.find((c) => c.zone === r.carbonZone)?.carbon_intensity ?? r.carbonFallback,
+      renewable_pct: pw?.renewable_pct ?? r.renewableFallback,
+      fossil_free_pct: pw?.fossil_free_pct ?? r.fossilFreeFallback,
+      top_source: pw?.top_source ?? r.topSourceFallback,
     }
   })
 }

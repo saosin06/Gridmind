@@ -15,6 +15,9 @@ export type RegionMeta = {
   pricingFallback: number  // $/MWh when live price unavailable
   cloudRegion: string      // representative cloud region for generated IaC
   flyRegion: string        // Fly.io region code for real deploys
+  renewableFallback: number   // % renewable when live power-mix unavailable
+  fossilFreeFallback: number  // % fossil-free fallback
+  topSourceFallback: string   // dominant generation source fallback
 }
 
 export const REGIONS: RegionMeta[] = [
@@ -24,6 +27,7 @@ export const REGIONS: RegionMeta[] = [
     pricingKey: 'CAISO', pricingDataset: 'caiso_lmp_real_time_5_min',
     pricingLocation: 'DLAP_PGAE-APND', pricingField: 'lmp', pricingFallback: 45.50,
     cloudRegion: 'us-west-1', flyRegion: 'sjc',
+    renewableFallback: 60, fossilFreeFallback: 80, topSourceFallback: 'wind',
   },
   {
     name: 'Ashburn', pue: 1.67, lat: 38.9940, lon: -77.4897,
@@ -31,6 +35,7 @@ export const REGIONS: RegionMeta[] = [
     pricingKey: 'PJM', pricingDataset: 'pjm_lmp_real_time_5_min',
     pricingLocation: 'DOM', pricingField: 'lmp', pricingFallback: 52.30,
     cloudRegion: 'us-east-1', flyRegion: 'iad',
+    renewableFallback: 4, fossilFreeFallback: 40, topSourceFallback: 'gas',
   },
   {
     name: 'Austin', pue: 1.62, lat: 30.2672, lon: -97.7431,
@@ -38,6 +43,7 @@ export const REGIONS: RegionMeta[] = [
     pricingKey: 'ERCOT', pricingDataset: 'ercot_spp_real_time_15_min',
     pricingLocation: 'LZ_AEN', pricingField: 'spp', pricingFallback: 38.20,
     cloudRegion: 'us-south-1', flyRegion: 'dfw',
+    renewableFallback: 40, fossilFreeFallback: 50, topSourceFallback: 'wind',
   },
 ]
 
