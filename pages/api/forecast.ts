@@ -5,5 +5,7 @@ export default async function handler(
   _req: NextApiRequest,
   res: NextApiResponse<RegionForecast[]>
 ) {
-  res.status(200).json(await getForecast())
+  const data = await getForecast()
+  res.setHeader('Cache-Control', 'public, s-maxage=900, stale-while-revalidate=3600')
+  res.status(200).json(data)
 }

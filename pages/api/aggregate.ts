@@ -14,6 +14,8 @@ export default async function handler(
   res: NextApiResponse<CloudRegion[]>
 ) {
   const regions = await getRegions()
+  // Edge-cache: serve instantly + refresh in the background (prices move every 5-15 min)
+  res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=600')
   // composite_score is filled in by /api/score once weights are known
   res.status(200).json(regions.map((r) => ({ ...r, composite_score: 0 })))
 }
